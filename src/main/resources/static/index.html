@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Triage & Data Reconciliation Assistant</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-hover: #0284c7;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+        }
+        h1 { margin-top: 0; font-size: 1.5rem; color: var(--accent); }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .row { display: flex; gap: 0.5rem; align-items: center; }
+        input, select, textarea, button {
+            background: #0b1120;
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.95rem;
+        }
+        input, select, textarea { width: 100%; }
+        button {
+            background: var(--accent);
+            color: #0f172a;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            white-space: nowrap;
+        }
+        button:hover { background: var(--accent-hover); color: #fff; }
+        button:disabled { opacity: 0.5; cursor: wait; }
+        #chatBox {
+            height: 320px;
+            overflow-y: auto;
+            background: #0b1120;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.85rem;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+        .msg-user { color: #38bdf8; margin-bottom: 0.5rem; font-weight: 600; }
+        .msg-ai { color: #e2e8f0; margin-bottom: 1rem; border-bottom: 1px dashed var(--border); padding-bottom: 0.75rem; }
+        pre {
+            background: #0b1120;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.88rem;
+            margin: 0;
+            min-height: 220px;
+        }
+        .badge {
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+    </style>
+</head>
+<body>
+<div style="max-width: 1200px; margin: 0 auto 1.5rem auto;">
+    <h1>Assistente AI per il Triage e la Riconciliazione Dati</h1>
+    <div class="badge">Spring Boot 3 &bull; Java 21 &bull; LangChain4j (@AiService, @Tool, RAG pgvector, Structured Output)</div>
+</div>
+
+<div class="grid">
+    <!-- Sezione 1: Conversazione libera con memoria -->
+    <div class="card">
+        <h2 style="margin:0; font-size:1.15rem;">1. Chat Assistente (con @MemoryId + @Tool + RAG)</h2>
+        <div class="row">
+            <label for="sessionId" style="white-space:nowrap; font-size:0.85rem; color:var(--muted);">Session ID:</label>
+            <input id="sessionId" type="text" value="operatore-01"/>
+        </div>
+        <div id="chatBox"></div>
+        <div class="row">
+            <input id="chatInput" type="text" placeholder="Es: Qual è lo stato di CLI-1002 e come procedo?"
+                   onkeydown="if(event.key==='Enter') sendChat()"/>
+            <button id="chatBtn" onclick="sendChat()">Invia</button>
+        </div>
+    </div>
+
+    <!-- Sezione 2: Structured Output (DiagnosticReport) -->
+    <div class="card">
+        <h2 style="margin:0; font-size:1.15rem;">2. Analisi Strutturata (DiagnosticReport JSON)</h2>
+        <p style="margin:0; font-size:0.85rem; color:var(--muted);">
+            Seleziona o inserisci un codice cliente di test per invocare <code>POST /api/assistant/analyze/{clientCode}</code>:
+        </p>
+        <div class="row">
+            <select id="clientCodeSelect">
+                <option value="CLI-1001">CLI-1001 (SYNCED)</option>
+                <option value="CLI-1002" selected>CLI-1002 (FAILED_SCHEMA - ERR-402)</option>
+                <option value="CLI-1003">CLI-1003 (STALE_LOCK - ERR-504)</option>
+                <option value="CLI-1004">CLI-1004 (SYNCED)</option>
+                <option value="CLI-1005">CLI-1005 (CONFLICT_VERSION - ERR-409)</option>
+            </select>
+            <button id="analyzeBtn" onclick="runAnalysis()">Analizza Record</button>
+        </div>
+        <pre id="reportOutput">// Il JSON del DiagnosticReport comparirà qui...</pre>
+    </div>
+</div>
+
+<script>
+    async function sendChat() {
+        const sessionId = document.getElementById('sessionId').value.trim() || 'default-session';
+        const input = document.getElementById('chatInput');
+        const btn = document.getElementById('chatBtn');
+        const chatBox = document.getElementById('chatBox');
+        const message = input.value.trim();
+        if (!message) return;
+
+        chatBox.innerHTML += `<div class="msg-user">Tu (${sessionId}): ${escapeHtml(message)}</div>`;
+        input.value = '';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/assistant/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId, message })
+            });
+            const data = await res.json();
+            const reply = data.reply || data.message || JSON.stringify(data);
+            chatBox.innerHTML += `<div class="msg-ai">AI: ${escapeHtml(reply)}</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        } catch (err) {
+            chatBox.innerHTML += `<div class="msg-ai" style="color:#f87171;">Errore: ${escapeHtml(err.message)}</div>`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function runAnalysis() {
+        const clientCode = document.getElementById('clientCodeSelect').value;
+        const btn = document.getElementById('analyzeBtn');
+        const out = document.getElementById('reportOutput');
+        btn.disabled = true;
+        out.textContent = `Analisi in corso per ${clientCode}...`;
+
+        try {
+            const res = await fetch(`/api/assistant/analyze/${encodeURIComponent(clientCode)}`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            out.textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+            out.textContent = 'Errore di comunicazione: ' + err.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, m => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[m]));
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: triage-ai-assistant
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/triage_db
+    username: triage_user
+    password: triage_password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8080
+
+# Configurazione LangChain4j + Ollama
+langchain4j:
+  ollama:
+    chat-model:
+      base-url: http://localhost:11434
+      model-name: qwen2.5-coder:7b # oppure llama3.1:8b
+      temperature: 0.1
+      timeout: 120s
+      log-requests: true
+      log-responses: true
+    embedding-model:
+      base-url: http://localhost:11434
+      model-name: nomic-embed-text
+      timeout: 60s
+
+# Parametri custom per PgVector
+app:
+  pgvector:
+    enabled: true
+    host: localhost
+    port: 5432
+    database: triage_db
+    user: triage_user
+    password: triage_password
+    table: operational_guidelines_embeddings
+    dimension: 768 # 768 per nomic-embed-text
